@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Abyssal Lander - Mobile Edition</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            color: #00ffff; /* Command Line Blue (Cyan) */
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none; /* Prevent pull-to-refresh on mobile */
+        }
+        canvas {
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 60px; 
+            left: 20px;
+            pointer-events: none;
+            text-shadow: 0 0 5px #00ffff;
+            z-index: 5;
+        }
+        .hud-line {
+            margin-bottom: 5px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+        .warning {
+            color: red;
+            text-shadow: 0 0 5px red;
+            animation: blinker 0.2s linear infinite;
+        }
+        #message-overlay {
+            position: absolute;
+            top: 40%; /* Moved up slightly for mobile visibility */
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            display: none;
+            z-index: 10;
+            width: 80%;
+        }
+        h1 {
+            font-size: 32px;
+            margin: 0 0 20px 0;
+            text-transform: uppercase;
+            border: 2px solid #00ffff;
+            padding: 10px 10px;
+            background: rgba(0, 20, 30, 0.9);
+            box-shadow: 0 0 15px #00ffff;
+        }
+        p {
+            font-size: 16px;
+            margin-bottom: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+        }
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+        #bar-container {
+            width: 150px;
+            height: 10px;
+            border: 1px solid #00ffff;
+            margin-top: 5px;
+            position: relative;
+        }
+        #stress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #00ffff;
+            transition: width 0.1s;
+            box-shadow: 0 0 5px #00ffff;
+        }
+
+        /* --- MOBILE CONTROLS --- */
+        #mobile-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 180px;
+            background: #001122;
+            border-top: 2px solid #00ffff;
+            display: none; /* Hidden on desktop by default */
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+
+        /* Logic controlled by JS class .is-mobile now, not media query */
+        body.is-mobile #mobile-controls { display: flex; }
+        body.is-mobile #ui-layer { font-size: 12px; top: 10px; left: 10px; }
+        body.is-mobile .hud-line { font-size: 12px; }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .d-pad-col {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            width: 70px;
+            height: 70px;
+            border: 2px solid #00ffff;
+            background: rgba(0, 40, 50, 0.3);
+            border-radius: 12px;
+            color: #00ffff;
+            font-size: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            -webkit-user-select: none;
+            transition: background 0.1s;
+        }
+
+        .btn:active, .btn.active {
+            background: #00ffff;
+            color: #000;
+            box-shadow: 0 0 15px #00ffff;
+        }
+
+        .btn-wide {
+            width: 100px;
+            height: 60px;
+            font-size: 16px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="hud-line">DEPTH: <span id="depth-val">0</span>m</div>
+        <div class="hud-line">V.SPEED: <span id="vspeed-val">0</span> m/s</div>
+        <div class="hud-line">BATTERY: <span id="fuel-val">100</span>%</div>
+        <div class="hud-line" id="hull-row">HULL INTEGRITY: <span id="hull-val">100</span>%</div>
+        
+        <div class="hud-line" style="margin-top: 15px;">EXTERNAL PRESSURE:</div>
+        <div id="bar-container">
+            <div id="stress-bar"></div>
+        </div>
+        <div class="hud-line" id="stress-text" style="font-size: 12px; margin-top: 2px;">STABLE</div>
+
+        <div class="hud-line" style="margin-top: 15px;">SCORE: <span id="score-val">0</span></div>
+    </div>
+
+    <div id="message-overlay">
+        <h1 id="msg-title">ABYSSAL LANDER</h1>
+        <p id="msg-desc">
+            <span style="color:red">DIFFICULTY: EXTREME</span><br>
+            The hull is rated for 96% max depth.<br>
+            ANY rapid movement will trigger implosion.<br>
+            Descend slower than gravity.
+        </p>
+        <p class="blink">PRESS SPACE TO INITIALIZE DIVE</p>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="mobile-controls">
+        <!-- Left Thumb: Horizontal Strafe -->
+        <div class="control-group">
+            <div class="btn" id="btn-left">&lt;</div>
+            <div class="btn" id="btn-right">&gt;</div>
+        </div>
+
+        <!-- Center: Action -->
+        <div class="btn btn-wide" id="btn-space">INIT / RESTART</div>
+
+        <!-- Right Thumb: Vertical Thrust -->
+        <div class="d-pad-col">
+            <div class="btn" id="btn-up">^</div>
+            <div class="btn" id="btn-down">v</div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+/**
+ * ABYSSAL LANDER - TITAN PHYSICS EDITION (MOBILE)
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const mobileControls = document.getElementById('mobile-controls');
+
+// Color Palette
+const C_BLUE = '#00ffff';
+const C_DARK_BLUE = '#004455';
+const C_WHITE = '#ffffff';
+const C_RED = '#ff3333';
+const C_WARN = '#ffaa00';
+
+// UI Elements
+const uiElements = document.getElementById('ui-layer');
+const uiDepth = document.getElementById('depth-val');
+const uiVSpeed = document.getElementById('vspeed-val');
+const uiFuel = document.getElementById('fuel-val');
+const uiHull = document.getElementById('hull-val');
+const uiHullRow = document.getElementById('hull-row');
+const uiScore = document.getElementById('score-val');
+const uiStressBar = document.getElementById('stress-bar');
+const uiStressText = document.getElementById('stress-text');
+const msgOverlay = document.getElementById('message-overlay');
+const msgTitle = document.getElementById('msg-title');
+const msgDesc = document.getElementById('msg-desc');
+
+// Game State Enum
+const STATE = {
+    TITLE: 0,
+    MENU: 1, 
+    PLAYING: 2,
+    LANDED: 3,
+    CRASHED: 4,
+    IMPLODED: 5
+};
+
+let gameState = STATE.TITLE;
+let width, height;
+let lastTime = 0;
+let timeAccumulator = 0; 
+let score = 0;
+let shakeAmount = 0;
+
+// Inputs
+const keys = {
+    ArrowUp: false,
+    ArrowDown: false,
+    ArrowLeft: false,
+    ArrowRight: false,
+    Space: false
+};
+
+// Physics Constants
+const GRAVITY = 8; 
+const V_THRUST_POWER = 40; 
+const H_THRUST_POWER = 30; 
+const WATER_DRAG = 0.9; 
+const SAFE_LANDING_SPEED = 12; 
+const MAX_TILT = 0.1; 
+
+// STRESS CONSTANTS
+const MAX_STRESS = 100; 
+const DEPTH_STRESS_MAX = 96; 
+const VELOCITY_STRESS_FACTOR = 15.0; 
+
+// Game Objects
+let sub = {
+    x: 0, y: 0, vx: 0, vy: 0,
+    angle: 0, tilt: 0, fuel: 100, hull: 100, stress: 0,
+    width: 34, height: 14 
+};
+
+let terrain = [];
+let decorations = []; 
+let particles = [];
+let bubbles = [];
+
+// --- MOBILE DETECTION ---
+function isMobileDevice() {
+    // Check for common mobile UA strings OR if touch is enabled on a smallish screen
+    const ua = navigator.userAgent;
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile/i.test(ua);
+    return isMobileUA;
+}
+
+// --- RESIZE & MOBILE LAYOUT ---
+function resize() {
+    // Apply mobile state class
+    if (isMobileDevice()) {
+        document.body.classList.add('is-mobile');
+    } else {
+        document.body.classList.remove('is-mobile');
+    }
+
+    // Check if mobile controls are visible (layout dependent)
+    let controlsHeight = 0;
+    const style = window.getComputedStyle(mobileControls);
+    if (style.display !== 'none') {
+        controlsHeight = mobileControls.offsetHeight;
+    }
+
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight - controlsHeight;
+    
+    if (gameState === STATE.TITLE) {
+        // Just ensure vars are set
+    }
+}
+window.addEventListener('resize', resize);
+// Call resize initially to set setup
+resize();
+
+// Input Handling - Keyboard
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+        handleAction();
+    }
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+});
+window.addEventListener('keyup', (e) => {
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
+});
+
+// Input Handling - Touch / Mouse
+function setupTouchButton(id, keyName) {
+    const btn = document.getElementById(id);
+    
+    const start = (e) => {
+        e.preventDefault();
+        if (keyName === 'Space') {
+            handleAction();
+        }
+        keys[keyName] = true;
+        btn.classList.add('active');
+    };
+
+    const end = (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+        btn.classList.remove('active');
+    };
+
+    btn.addEventListener('touchstart', start, {passive: false});
+    btn.addEventListener('touchend', end, {passive: false});
+    // For debugging on desktop with mouse (optional, can be removed if strict mobile only desired)
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('mouseup', end);
+    btn.addEventListener('mouseleave', end);
+}
+
+setupTouchButton('btn-left', 'ArrowLeft');
+setupTouchButton('btn-right', 'ArrowRight');
+setupTouchButton('btn-up', 'ArrowUp');
+setupTouchButton('btn-down', 'ArrowDown');
+setupTouchButton('btn-space', 'Space');
+
+function handleAction() {
+    if (gameState === STATE.TITLE) {
+        startGame();
+    } else if (gameState !== STATE.PLAYING) {
+        startGame();
+    }
+}
+
+// --- GENERATION ---
+
+function generateTerrain() {
+    terrain = [];
+    decorations = [];
+    // DIFFICULTY TWEAK: Higher resolution
+    const segments = 120; 
+    const segmentWidth = width / segments;
+    let currentY = height * 0.7;
+    
+    // Start point
+    terrain.push({x: 0, y: height * 0.5, type: 'jagged'});
+
+    let makingPad = false;
+    let padLength = 0;
+    let padStartX = 0;
+    let padStartY = 0;
+
+    const minPadSegments = Math.ceil((sub.width * 1.5) / segmentWidth);
+
+    for (let i = 0; i <= segments; i++) {
+        let x = i * segmentWidth;
+        let type = 'jagged';
+        
+        // DIFFICULTY TWEAK: Rare pads
+        if (!makingPad && i > 10 && i < segments - 10 && Math.random() < 0.035) {
+            makingPad = true;
+            padLength = minPadSegments + Math.floor(Math.random() * 2); 
+            padStartX = x;
+            padStartY = currentY; 
+        }
+
+        if (makingPad) {
+            type = 'pad';
+            currentY = padStartY; 
+            
+            if (padLength === Math.floor(minPadSegments / 2)) { 
+                let decoType = Math.random() > 0.5 ? 'wreck' : 'chest';
+                decorations.push({
+                    x: x,
+                    y: currentY,
+                    type: decoType,
+                    rotation: (Math.random() - 0.5) * 0.2 
+                });
+            }
+
+            padLength--;
+            if (padLength <= 0) makingPad = false;
+        } else {
+            currentY += (Math.random() - 0.5) * 80;
+            if (currentY < height * 0.4) currentY = height * 0.4;
+            if (currentY > height - 20) currentY = height - 20;
+        }
+
+        terrain.push({x: x, y: currentY, type: type});
+    }
+}
+
+function resetSub() {
+    sub.x = width / 2;
+    sub.y = 80; 
+    sub.vx = 0;
+    sub.vy = 0;
+    sub.tilt = 0;
+    sub.fuel = 100;
+    sub.hull = 100;
+    sub.stress = 0;
+    shakeAmount = 0;
+}
+
+function startGame() {
+    generateTerrain();
+    resetSub();
+    score = 0;
+    particles = [];
+    bubbles = [];
+    gameState = STATE.PLAYING;
+    msgOverlay.style.display = 'none';
+    uiElements.style.display = 'block';
+}
+
+// --- PHYSICS ENGINE ---
+
+function update(dt) {
+    timeAccumulator += dt;
+
+    if (gameState === STATE.TITLE) {
+        updateParticles(dt); 
+        spawnBubbles('ambient');
+        updateBubbles(dt);
+        return;
+    }
+
+    if (gameState !== STATE.PLAYING) {
+        updateParticles(dt); 
+        shakeAmount = Math.max(0, shakeAmount - 1);
+        return;
+    }
+
+    // --- THRUSTER PHYSICS ---
+    
+    if (sub.fuel > 0) {
+        if (keys.ArrowUp) {
+            sub.vy -= V_THRUST_POWER * dt;
+            sub.fuel -= 10 * dt;
+            spawnBubbles('vertical_down'); 
+        }
+        if (keys.ArrowDown) {
+            sub.vy += V_THRUST_POWER * dt;
+            sub.fuel -= 10 * dt;
+            spawnBubbles('vertical_up'); 
+        }
+        
+        if (keys.ArrowLeft) {
+            sub.vx -= H_THRUST_POWER * dt;
+            sub.fuel -= 10 * dt;
+            spawnBubbles('right'); 
+            sub.tilt = -MAX_TILT;
+        } else if (keys.ArrowRight) {
+            sub.vx += H_THRUST_POWER * dt;
+            sub.fuel -= 10 * dt;
+            spawnBubbles('left'); 
+            sub.tilt = MAX_TILT;
+        } else {
+            sub.tilt = sub.tilt * 0.9;
+        }
+    }
+
+    sub.vy += GRAVITY * dt;
+    sub.vx -= sub.vx * WATER_DRAG * dt;
+    sub.vy -= sub.vy * WATER_DRAG * dt;
+    sub.x += sub.vx * dt * 10; 
+    sub.y += sub.vy * dt * 10;
+
+    if (sub.x < 0) sub.x = width;
+    if (sub.x > width) sub.x = 0;
+
+    // --- STRESS MECHANIC ---
+    let depthRatio = Math.max(0, (sub.y - 100) / (height - 100));
+    let staticStress = depthRatio * DEPTH_STRESS_MAX;
+    let speed = Math.sqrt(sub.vx*sub.vx + sub.vy*sub.vy);
+    let dynamicStress = speed * VELOCITY_STRESS_FACTOR;
+    sub.stress = staticStress + dynamicStress;
+
+    if (sub.stress > MAX_STRESS) {
+        let overload = sub.stress - MAX_STRESS;
+        sub.hull -= overload * dt * 10.0; 
+        shakeAmount = Math.min(overload * 0.5, 10);
+    } else {
+        shakeAmount = Math.max(0, shakeAmount - 2);
+    }
+
+    if (sub.hull <= 0) {
+        triggerImplosion("HULL FATIGUE FAILURE");
+    }
+
+    checkCollisions();
+    updateUI();
+    updateParticles(dt);
+    updateBubbles(dt);
+}
+
+function checkCollisions() {
+    const subPoly = getSubPolygon();
+
+    for (let i = 0; i < terrain.length - 1; i++) {
+        let p1 = terrain[i];
+        let p2 = terrain[i+1];
+
+        for (let j = 0; j < subPoly.length; j++) {
+            let s1 = subPoly[j];
+            let s2 = subPoly[(j + 1) % subPoly.length];
+
+            if (lineIntersect(p1.x, p1.y, p2.x, p2.y, s1.x, s1.y, s2.x, s2.y)) {
+                handleCollision(p1, p2);
+                return;
+            }
+        }
+    }
+
+    if (sub.y > height) {
+        triggerImplosion("LOST TO THE ABYSS");
+    }
+}
+
+function handleCollision(t1, t2) {
+    let vSpeed = Math.abs(sub.vy * 10);
+    let hSpeed = Math.abs(sub.vx * 10);
+    
+    let isPad = t1.type === 'pad' && t2.type === 'pad';
+    let isFlat = Math.abs(t1.y - t2.y) < 5;
+
+    if (isPad && isFlat && vSpeed < SAFE_LANDING_SPEED && hSpeed < 5) {
+        gameWin();
+    } else {
+        if (vSpeed > 40) {
+            triggerImplosion("IMPACT VELOCITY CRITICAL");
+        } else {
+            gameCrash("HULL BREACH DETECTED");
+        }
+    }
+}
+
+function gameWin() {
+    gameState = STATE.LANDED;
+    let fuelBonus = Math.floor(sub.fuel * 10);
+    let integrityBonus = Math.floor(sub.hull * 10);
+    let totalScore = fuelBonus + integrityBonus;
+    score = totalScore;
+    
+    msgTitle.innerText = "DIVE SUCCESSFUL";
+    msgTitle.style.borderColor = C_BLUE;
+    msgDesc.innerHTML = `DATA SECURED.<br>Fuel Bonus: ${fuelBonus}<br>Hull Bonus: ${integrityBonus}<br>Total Score: ${totalScore}`;
+    msgOverlay.style.display = 'block';
+}
+
+function gameCrash(reason) {
+    gameState = STATE.CRASHED;
+    msgTitle.innerText = "CRITICAL FAILURE";
+    msgTitle.style.borderColor = "red";
+    msgDesc.innerHTML = `${reason}<br>Submarine destroyed.`;
+    msgOverlay.style.display = 'block';
+}
+
+function triggerImplosion(reason) {
+    gameState = STATE.IMPLODED;
+    
+    for (let i = 0; i < 250; i++) {
+        let theta = Math.random() * Math.PI * 2;
+        let r = 20 + Math.random() * 20; 
+        let sx = sub.x + Math.cos(theta) * r;
+        let sy = sub.y + Math.sin(theta) * r;
+
+        particles.push({
+            x: sx,
+            y: sy,
+            targetX: sub.x,
+            targetY: sub.y,
+            phase: 'implode', 
+            life: 0,
+            angle: Math.random() * Math.PI * 2,
+            len: 2 + Math.random() * 5
+        });
+    }
+
+    msgTitle.innerText = "STRUCTURAL COLLAPSE";
+    msgTitle.style.borderColor = "white";
+    msgDesc.innerHTML = `${reason}<br>Implosion detected.`;
+    msgOverlay.style.display = 'block';
+}
+
+// --- RENDER ---
+
+function draw() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+    
+    if (gameState === STATE.TITLE) {
+        drawTitleScreen();
+        return;
+    }
+
+    ctx.save();
+    if (shakeAmount > 0) {
+        let sx = (Math.random() - 0.5) * shakeAmount;
+        let sy = (Math.random() - 0.5) * shakeAmount;
+        ctx.translate(sx, sy);
+    }
+
+    drawWaves();
+    drawTerrain();
+    drawDecorations();
+    drawBubbles();
+    drawParticles();
+
+    if (gameState === STATE.PLAYING || gameState === STATE.LANDED || gameState === STATE.CRASHED) {
+        drawSub();
+    }
+
+    if (gameState === STATE.IMPLODED) {
+        drawImplosion();
+    }
+
+    ctx.restore(); 
+}
+
+function drawTitleScreen() {
+    drawWaves();
+    drawBubbles();
+    
+    ctx.save();
+    ctx.strokeStyle = C_BLUE;
+    ctx.shadowColor = C_BLUE;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    
+    let cx = width / 2;
+    let cy = height / 2;
+
+    ctx.textAlign = "center";
+    ctx.font = "bold 60px Courier New";
+    ctx.fillStyle = "#000"; 
+    ctx.strokeText("ABYSSAL", cx, cy - 40);
+    ctx.strokeText("LANDER", cx, cy + 30);
+    
+    ctx.font = "20px Courier New";
+    ctx.lineWidth = 1;
+    ctx.shadowBlur = 0;
+    
+    let alpha = (Math.sin(timeAccumulator * 3) + 1) / 2; 
+    ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
+    
+    let promptText = "PRESS [SPACE] TO DIVE";
+    // Check if on mobile 
+    if (isMobileDevice()) promptText = "TAP [INIT] TO DIVE";
+    
+    ctx.fillText(promptText, cx, cy + 100);
+
+    ctx.restore();
+}
+
+function drawWaves() {
+    ctx.beginPath();
+    ctx.strokeStyle = C_BLUE;
+    ctx.lineWidth = 1;
+    
+    for (let j = 0; j < 3; j++) {
+        let yOffset = 30 + j * 10;
+        let amplitude = 10 - j * 2;
+        let speed = 1 + j * 0.5;
+        
+        ctx.moveTo(0, yOffset);
+        for (let x = 0; x < width; x += 10) {
+            let y = yOffset + Math.sin(x * 0.02 + timeAccumulator * speed) * amplitude;
+            ctx.lineTo(x, y);
+        }
+    }
+    ctx.stroke();
+}
+
+function drawTerrain() {
+    ctx.strokeStyle = C_BLUE;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = C_BLUE;
+    ctx.shadowBlur = 5;
+    
+    ctx.beginPath();
+    if (terrain.length > 0) {
+        ctx.moveTo(terrain[0].x, terrain[0].y);
+        for (let i = 1; i < terrain.length; i++) {
+            ctx.lineTo(terrain[i].x, terrain[i].y);
+        }
+    }
+    ctx.stroke();
+    
+    ctx.shadowBlur = 0; 
+
+    ctx.strokeStyle = C_WHITE;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < terrain.length - 1; i++) {
+        if (terrain[i].type === 'pad' && terrain[i+1].type === 'pad') {
+            ctx.moveTo(terrain[i].x, terrain[i].y);
+            ctx.lineTo(terrain[i+1].x, terrain[i+1].y);
+        }
+    }
+    ctx.stroke();
+    
+    ctx.fillStyle = C_WHITE;
+    ctx.font = '12px Courier New';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < terrain.length - 1; i++) {
+        if (terrain[i].type === 'pad' && terrain[i+1].type === 'pad') {
+           ctx.fillText("LZ", (terrain[i].x + terrain[i+1].x)/2, terrain[i].y + 20);
+        }
+    }
+}
+
+function drawDecorations() {
+    ctx.strokeStyle = C_BLUE;
+    ctx.lineWidth = 1.5;
+
+    decorations.forEach(d => {
+        ctx.save();
+        ctx.translate(d.x, d.y);
+        ctx.rotate(d.rotation);
+
+        if (d.type === 'wreck') {
+            ctx.beginPath();
+            ctx.moveTo(-15, -5); 
+            ctx.quadraticCurveTo(0, 10, 15, -10); 
+            ctx.moveTo(-5, 0);
+            ctx.lineTo(-5, -15); 
+            ctx.moveTo(-5, -10);
+            ctx.lineTo(0, -5); 
+            ctx.stroke();
+        } else if (d.type === 'chest') {
+            ctx.beginPath();
+            ctx.rect(-6, -8, 12, 8); 
+            ctx.arc(0, -8, 6, Math.PI, 0); 
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    });
+}
+
+function drawBubbles() {
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    bubbles.forEach(b => {
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - b.vx * 0.1, b.y - b.vy * 0.1); 
+    });
+    ctx.stroke();
+}
+
+function drawParticles() {
+    ctx.strokeStyle = C_WHITE;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    particles.forEach(p => {
+        let dx = Math.cos(p.angle) * p.len;
+        let dy = Math.sin(p.angle) * p.len;
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + dx, p.y + dy);
+    });
+    ctx.stroke();
+}
+
+function drawSub() {
+    ctx.save();
+    ctx.translate(sub.x, sub.y);
+    ctx.rotate(sub.tilt); 
+
+    if (sub.stress > 100) {
+        ctx.strokeStyle = `rgb(255, ${255 - (sub.stress-100)*5}, ${255 - (sub.stress-100)*5})`;
+        ctx.lineWidth = 2 + Math.random() * 2; 
+    } else {
+        ctx.strokeStyle = C_WHITE;
+        ctx.lineWidth = 2;
+    }
+    
+    const w = sub.width;  
+    const h = sub.height; 
+    
+    ctx.beginPath();
+    ctx.rect(-w/2, -h/2, w, h);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(-w/2, 0, h/2, 0.5 * Math.PI, 1.5 * Math.PI); 
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.arc(w/2, 0, h/2, 1.5 * Math.PI, 0.5 * Math.PI); 
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(w/2 + 2, 0, 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.lineWidth = 1.5;
+    const skidY = h/2 + 5;
+    const skidW = w * 0.6;
+    
+    ctx.beginPath();
+    ctx.moveTo(skidW/2, h/2);
+    ctx.lineTo(skidW/2, skidY);
+    ctx.lineTo(skidW/2 + 5, skidY); 
+    
+    ctx.moveTo(-skidW/2, h/2);
+    ctx.lineTo(-skidW/2, skidY);
+    ctx.lineTo(-skidW/2 - 5, skidY); 
+    
+    ctx.moveTo(-skidW/2, skidY);
+    ctx.lineTo(skidW/2, skidY);
+    ctx.stroke();
+
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(-w/2 - 4, -h/2 - 4, 8, 4); 
+    ctx.rect(-w/2 - 4, h/2, 8, 4);      
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+function drawImplosion() {}
+
+function spawnBubbles(dir) {
+    let count = 2;
+    let bx, by, angle, spread;
+
+    if (dir === 'ambient') {
+        if (Math.random() > 0.1) return; 
+        bx = Math.random() * width;
+        by = height;
+        angle = -Math.PI/2;
+        spread = 0.2;
+        count = 1;
+    } else if (dir === 'vertical_down') {
+        bx = sub.x;
+        by = sub.y + sub.height/2 + 5;
+        angle = Math.PI / 2; 
+        spread = 0.5;
+    } else if (dir === 'vertical_up') {
+        bx = sub.x;
+        by = sub.y - sub.height/2 - 5;
+        angle = -Math.PI / 2; 
+        spread = 0.5;
+    } else if (dir === 'left') {
+        bx = sub.x - sub.width/2 - 5;
+        by = sub.y;
+        angle = Math.PI; 
+        spread = 0.5;
+    } else if (dir === 'right') {
+        bx = sub.x + sub.width/2 + 5;
+        by = sub.y;
+        angle = 0; 
+        spread = 0.5;
+    }
+
+    for(let i=0; i<count; i++) {
+        bubbles.push({
+            x: bx + (Math.random()-0.5)*10,
+            y: by + (Math.random()-0.5)*5,
+            vx: Math.cos(angle + (Math.random()-0.5)*spread) * (dir === 'ambient' ? 20 : 40),
+            vy: Math.sin(angle + (Math.random()-0.5)*spread) * (dir === 'ambient' ? 20 : 40),
+            life: dir === 'ambient' ? 5.0 : 0.8
+        });
+    }
+}
+
+function updateBubbles(dt) {
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+        let b = bubbles[i];
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.life -= dt * 2; 
+        if (b.life <= 0) bubbles.splice(i, 1);
+    }
+}
+
+function updateParticles(dt) {
+    particles.forEach(p => {
+        p.life++;
+
+        if (p.phase === 'implode') {
+            let dx = p.targetX - p.x;
+            let dy = p.targetY - p.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if (dist < 5 || p.life > 8) {
+                p.phase = 'drift';
+                p.vx = (Math.random() - 0.5) * 20;
+                p.vy = (Math.random() - 0.5) * 20;
+            } else {
+                p.x += dx * 0.3;
+                p.y += dy * 0.3;
+            }
+        } else {
+            p.vx *= 0.95;
+            p.vy *= 0.95; 
+            p.vy += 5 * dt; 
+            p.x += p.vx;
+            p.y += p.vy;
+        }
+    });
+}
+
+// --- UTILS ---
+
+function getSubPolygon() {
+    const w = sub.width / 2 + 6; 
+    const h = sub.height / 2 + 5; 
+    const angle = sub.tilt; 
+
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    const corners = [
+        {x: -w, y: -h},
+        {x: w, y: -h},
+        {x: w, y: h},
+        {x: -w, y: h}
+    ];
+
+    return corners.map(p => ({
+        x: sub.x + (p.x * cos - p.y * sin),
+        y: sub.y + (p.x * sin + p.y * cos)
+    }));
+}
+
+function lineIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (denom === 0) return false;
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+    return (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1);
+}
+
+function updateUI() {
+    if (gameState === STATE.TITLE) {
+        uiElements.style.display = 'none';
+        return;
+    }
+
+    uiDepth.innerText = Math.floor((sub.y - 50) / 5);
+    
+    let vDisplay = (-sub.vy * 5).toFixed(1); 
+    uiVSpeed.innerText = vDisplay;
+    
+    uiFuel.innerText = Math.floor(sub.fuel);
+    uiHull.innerText = Math.floor(sub.hull);
+    uiScore.innerText = score;
+
+    uiHullRow.className = sub.hull < 30 ? 'hud-line warning' : 'hud-line';
+    uiFuel.style.color = sub.fuel < 20 ? C_RED : C_BLUE;
+    uiVSpeed.style.color = Math.abs(sub.vy * 10) > SAFE_LANDING_SPEED ? C_RED : C_BLUE;
+
+    let stressPct = Math.min(100, (sub.stress / MAX_STRESS) * 100);
+    uiStressBar.style.width = stressPct + "%";
+    
+    if (sub.stress > 100) {
+        uiStressBar.style.backgroundColor = C_RED;
+        uiStressBar.style.boxShadow = `0 0 10px ${C_RED}`;
+        uiStressText.innerText = "CRITICAL OVERLOAD - HULL FRACTURING";
+        uiStressText.classList.add("warning");
+    } else if (sub.stress > 80) {
+        uiStressBar.style.backgroundColor = C_WARN;
+        uiStressBar.style.boxShadow = `0 0 5px ${C_WARN}`;
+        uiStressText.innerText = "WARNING - PRESSURE CRITICAL";
+        uiStressText.classList.remove("warning");
+    } else {
+        uiStressBar.style.backgroundColor = C_BLUE;
+        uiStressBar.style.boxShadow = `0 0 5px ${C_BLUE}`;
+        uiStressText.innerText = "PRESSURE STABLE";
+        uiStressText.classList.remove("warning");
+    }
+}
+
+function loop(timestamp) {
+    const dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    if (dt < 0.1) {
+        update(dt);
+        draw();
+    }
+
+    requestAnimationFrame(loop);
+}
+
+// Start with resize to init width/height and mobile check
+resize();
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
