@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Abyssal Lander - Disruptor Edition</title>
+    <title>Abyssal Lander - Precision Edition</title>
     <style>
         body {
             margin: 0;
@@ -203,7 +203,7 @@
 
 <script>
 /**
- * ABYSSAL LANDER - SIMULATION EDITION
+ * ABYSSAL LANDER - PRECISION EDITION
  */
 
 console.log("[ABYSSAL] Init Script Started");
@@ -275,6 +275,7 @@ const introLines = [
     "IGNORE THE CRACKING SOUNDS.",
     "PHYSICS IS JUST A SUGGESTION."
 ];
+
 // Inputs
 const keys = { 
     ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false,
@@ -287,17 +288,17 @@ const GRAVITY = 7.0;  // Increased from 5.5 (Falls much faster)
 const WATER_DRAG = 0.975; // Less drag, preserving downward momentum
 const V_THRUST_POWER = 45; // Reduced from 65 (Less twitchy, requires planning)
 const H_THRUST_POWER = 25; 
-let currentSafeLandingSpeed = 20; // Changed from const to let for dynamic scaling
+let currentSafeLandingSpeed = 20; // Starts forgiving, tightens slowly
 const MAX_TILT = 0.12; 
 const MAX_STRESS = 100; 
-let CURRENT_DEPTH_PRESSURE_MAX = 60; 
+let CURRENT_DEPTH_PRESSURE_MAX = 50; // Starts at 50%
 const VELOCITY_STRESS_FACTOR = 32.0; // Increased from 22.0 (Speed is lethal)
 
 // Game Objects
 let sub = {
     x: 0, y: 0, vx: 0, vy: 0,
     angle: 0, tilt: 0, fuel: 100, hull: 100, stress: 0,
-    width: 30, height: 14 // Width reduced slightly (34->30) to reduce wall clipping
+    width: 30, height: 14 
 };
 
 let terrain = [];
@@ -328,15 +329,12 @@ function resize() {
     width = Math.floor(window.innerWidth);
     height = Math.floor(window.innerHeight - controlsHeight);
     
-    // Safety Fallbacks - Updated for Mobile Landscape
     if (width < 320) width = 320;
-    // Lowered minimum height to prevent clipping on landscape phones
-    if (height < 150) height = 150; 
+    if (height < 240) height = 240;
 
     canvas.width = width;
     canvas.height = height;
     
-    // Reset intro scroll if needed
     if (gameState === STATE.INTRO && introScrollY === 0) {
         introScrollY = height + 50;
     }
@@ -348,30 +346,23 @@ function resize() {
 window.addEventListener('resize', resize);
 window.addEventListener('load', () => {
     resize();
-    window.focus(); // Force focus on load
+    window.focus();
 });
 setTimeout(resize, 100);
 
 // --- INPUT HANDLING ---
-
-// Force focus on click to ensure keyboard events are captured
 window.addEventListener('click', () => {
     window.focus();
 });
 
 window.addEventListener('keydown', (e) => {
-    // Prevent default scrolling for game keys
     if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].indexOf(e.code) > -1) {
         e.preventDefault();
     }
-
     if (e.code === 'Space' || e.code === 'Enter') {
         handleAction();
     }
-    
-    if (keys.hasOwnProperty(e.code)) {
-        keys[e.code] = true;
-    }
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
 });
 
 window.addEventListener('keyup', (e) => {
@@ -413,8 +404,10 @@ setupTouchButton('btn-space', 'Space');
 
 function handleAction() {
     if (gameState === STATE.INTRO) {
-        // Skip intro
         gameState = STATE.TITLE;
+        // Reset keys
+        keys.Space = false;
+        keys.Enter = false;
     } else if (gameState === STATE.TITLE || gameState === STATE.CRASHED || gameState === STATE.IMPLODED) {
         if (gameState === STATE.CRASHED || gameState === STATE.IMPLODED) {
              level = 1;
@@ -431,7 +424,6 @@ function handleAction() {
 
 function initMarineSnow() {
     marineSnow = [];
-    // Scale particle count by screen size
     let count = Math.floor((width * height) / 5000); 
     if (count > 150) count = 150;
     
@@ -446,32 +438,32 @@ function initMarineSnow() {
 }
 
 function generateTerrain() {
+    console.log("[ABYSSAL] Generating Terrain");
     terrain = [];
+    // Decorations removed as requested to keep UI clean
+    
     if (!width || width < 100) resize();
 
-    // 1. DYNAMIC DEPTH CAP
+    // 1. DYNAMIC DEPTH CAP (Long Progression)
+    // Mobile: Cap floor at 75%, Desktop: 85%
     let maxDepthPct = isMobileDevice() ? 0.75 : 0.85;
-    let baseDepthPct = 0.3 + (Math.min(level, 5) * 0.12); 
+    // Slower progression: Reaches max depth visibilty around level 40 instead of 5
+    let baseDepthPct = 0.3 + (Math.min(level, 40) * 0.015); 
     if (baseDepthPct > maxDepthPct) baseDepthPct = maxDepthPct;
 
-    // 2. PRESSURE SCALING
-    CURRENT_DEPTH_PRESSURE_MAX = 55 + (level * 4);
+    // 2. PRESSURE SCALING (0-50 Levels)
+    // Starts at 50%, adds ~0.9% per level. Reaches ~95% at Level 50.
+    CURRENT_DEPTH_PRESSURE_MAX = 50 + (level * 0.9);
     if (CURRENT_DEPTH_PRESSURE_MAX > 98) CURRENT_DEPTH_PRESSURE_MAX = 98;
 
-    // 3. LANDING DIFFICULTY SCALING (New)
-    // Level 1: 20 (Forgiving) -> Level 5+: 12 (Strict)
-    currentSafeLandingSpeed = Math.max(12, 22 - (level * 2));
+    // 3. LANDING DIFFICULTY (Marathon Mode)
+    // Starts at 20.0 (Very Easy). Decreases by 0.16 per level.
+    // Level 10: ~18.4
+    // Level 50: ~12.0 (Hard)
+    currentSafeLandingSpeed = Math.max(12, 20 - (level * 0.16));
 
-    // 4. DYNAMIC RESOLUTION
-    const segments = Math.max(40, Math.min(150, Math.floor(width / 8)));
+    const segments = 120; 
     const segmentWidth = width / segments;
-    
-    // 3. DYNAMIC ROUGHNESS
-    // Roughness scales with height. 
-    // Don't let spikes be taller than 15% of the screen height.
-    let roughness = Math.min(60, height * 0.15);
-    if (roughness < 15) roughness = 15; // Minimum jaggedness
-
     let currentY = height * baseDepthPct;
     
     terrain.push({x: 0, y: height * (baseDepthPct - 0.1), type: 'jagged'}); 
@@ -480,24 +472,21 @@ function generateTerrain() {
     let padLength = 0;
     let padStartX = 0;
     let padStartY = 0;
-    let padCount = 0;
 
     const minPadSegments = Math.ceil((sub.width * 1.5) / segmentWidth);
-    let padChance = 0.04 - (level * 0.003); 
-    if (padChance < 0.015) padChance = 0.015;
+    
+    // Pad Chance decays extremely slowly now
+    let padChance = Math.max(0.015, 0.04 - (level * 0.0005));
 
     for (let i = 0; i <= segments; i++) {
         let x = i * segmentWidth;
         let type = 'jagged';
         
-        let forceSpawn = (padCount === 0 && i > (segments * 0.75));
-
-        if (!makingPad && i > 5 && i < segments - 5 && (Math.random() < padChance || forceSpawn)) {
+        if (!makingPad && i > 10 && i < segments - 10 && Math.random() < padChance) {
             makingPad = true;
             padLength = minPadSegments + Math.floor(Math.random() * 2); 
             padStartX = x;
             padStartY = currentY; 
-            padCount++;
         }
 
         if (makingPad) {
@@ -506,12 +495,9 @@ function generateTerrain() {
             padLength--;
             if (padLength <= 0) makingPad = false;
         } else {
-            // Use dynamic roughness
-            currentY += (Math.random() - 0.5) * roughness;
-            
-            // Safety Clamps relative to screen size
+            currentY += (Math.random() - 0.5) * 60;
             if (currentY < height * 0.2) currentY = height * 0.2;
-            if (currentY > height - 10) currentY = height - 10; // Keep 10px buffer from bottom
+            if (currentY > height - 20) currentY = height - 20;
         }
 
         terrain.push({x: x, y: currentY, type: type});
@@ -549,18 +535,14 @@ function update(dt) {
     timeAccumulator += dt;
 
     if (gameState === STATE.INTRO) {
-        // Scroll text
-        introScrollY -= 30 * dt; // Scroll speed
-        // Check if finished
+        introScrollY -= 30 * dt; 
         let totalHeight = introLines.length * 40;
         if (introScrollY < -(totalHeight + 100)) {
             gameState = STATE.TITLE;
         }
         
-        // Skip intro with controls
         if (keys.Space || keys.Enter) {
             gameState = STATE.TITLE;
-            // Reset keys to prevent accidental start
             keys.Space = false;
             keys.Enter = false;
         }
@@ -583,7 +565,7 @@ function update(dt) {
         return;
     }
 
-    // Controls (Arrows OR WASD)
+    // Controls
     if (sub.fuel > 0) {
         if (keys.ArrowUp || keys.KeyW) {
             sub.vy -= V_THRUST_POWER * dt;
@@ -630,23 +612,18 @@ function update(dt) {
     let weightedSpeed = Math.sqrt((sub.vx * horizontalFactor)**2 + sub.vy**2);
     let dynamicStress = weightedSpeed * VELOCITY_STRESS_FACTOR;
     
-    // SMOOTHING: Target stress vs current stress
-    // This removes the "jitter" from thrusters and makes pressure feel heavy
+    // Smoothing
     let targetStress = staticStress + dynamicStress;
-    sub.stress = sub.stress + (targetStress - sub.stress) * 0.05; // 5% blend per frame
+    sub.stress = sub.stress + (targetStress - sub.stress) * 0.05;
 
-    // --- DAMAGE LOGIC ---
     if (sub.stress > MAX_STRESS) {
-        // CRITICAL (Red Zone): Massive Damage
         let overload = sub.stress - MAX_STRESS;
         sub.hull -= overload * dt * 10.0; 
         shakeAmount = Math.min(overload * 0.5, 10);
     } else if (sub.stress > 80) {
-        // WARNING (Yellow Zone): Structural Fatigue
-        // Hull slowly cracks if you sustain high pressure
         let overload = sub.stress - 80;
-        sub.hull -= overload * dt * 0.8; // Slower damage, but adds up
-        shakeAmount = Math.max(1, shakeAmount - 1); // Slight rattle to warn player
+        sub.hull -= overload * dt * 0.8; 
+        shakeAmount = Math.max(1, shakeAmount - 1); 
     } else {
         shakeAmount = Math.max(0, shakeAmount - 2);
     }
@@ -676,12 +653,10 @@ function updateMarineSnow(dt, subVx, subVy) {
 function checkCollisions() {
     const subPoly = getSubPolygon();
     
-    // Find nearest pad for forgiveness check
     let nearestPadX = -1;
     let nearestPadY = -1;
     let minDist = Infinity;
     
-    // Locate the closest pad center
     for (let i = 0; i < terrain.length - 1; i++) {
         if (terrain[i].type === 'pad' && terrain[i+1].type === 'pad') {
             let midX = (terrain[i].x + terrain[i+1].x) / 2;
@@ -698,7 +673,6 @@ function checkCollisions() {
         let p1 = terrain[i];
         let p2 = terrain[i+1];
         
-        // Optimization: Only check lines close to sub
         if (Math.abs(p1.x - sub.x) > 100 && Math.abs(p2.x - sub.x) > 100) continue;
 
         for (let j = 0; j < subPoly.length; j++) {
@@ -719,11 +693,9 @@ function handleCollision(t1, t2, padX, padY) {
     let isPad = t1.type === 'pad' && t2.type === 'pad';
     let isFlat = Math.abs(t1.y - t2.y) < 5;
 
-    // FORGIVENESS LOGIC:
     let distToPad = Math.abs(sub.x - padX);
     let closeEnough = (padX !== -1) && (distToPad < 35); 
     
-    // Check if speed/angle is safe for landing using DYNAMIC limit
     let isSafeLandingConfig = (vSpeed < currentSafeLandingSpeed && hSpeed < 5 && Math.abs(sub.tilt) < MAX_TILT);
 
     if ((isPad && isFlat) || (closeEnough && isSafeLandingConfig)) {
@@ -837,16 +809,15 @@ function drawIntro() {
     let y = introScrollY;
     
     for(let line of introLines) {
-        if (y > -50 && y < height + 50) { // Optimize drawing
+        if (y > -50 && y < height + 50) { 
             ctx.fillText(line, width/2, y);
         }
         y += lineHeight;
     }
     
-    // Skip hint
     ctx.font = "16px Courier New";
     ctx.fillStyle = "rgba(0, 255, 255, 0.5)";
-    ctx.fillText("[PRESS ANY KEY TO SKIP]", width/2, height - 30);
+    ctx.fillText("[PRESS SPACE TO SKIP]", width/2, height - 30);
     
     ctx.restore();
 }
@@ -885,7 +856,7 @@ function drawTitleScreen() {
     ctx.save();
     ctx.strokeStyle = C_BLUE;
     ctx.shadowColor = C_BLUE;
-    ctx.shadowBlur = 0; // Removed blur for crisp text
+    ctx.shadowBlur = 0;
     ctx.lineWidth = 3;
     let cx = width / 2, cy = height / 2;
     ctx.textAlign = "center";
@@ -924,7 +895,7 @@ function drawWaves() {
 function drawTerrain() {
     ctx.strokeStyle = C_BLUE;
     ctx.lineWidth = 2;
-    ctx.shadowBlur = 0; // Removed glow for crisp lines
+    ctx.shadowBlur = 0;
     ctx.beginPath();
     if (terrain.length > 0) {
         ctx.moveTo(terrain[0].x, terrain[0].y);
@@ -950,7 +921,7 @@ function drawTerrain() {
         ctx.beginPath();
         ctx.strokeStyle = C_BLUE;
         ctx.shadowColor = C_BLUE;
-        ctx.shadowBlur = 0; // Removed glow here too
+        ctx.shadowBlur = 0; 
         if (terrain.length > 0) {
             ctx.moveTo(terrain[0].x, terrain[0].y);
             for (let i = 1; i < terrain.length; i++) ctx.lineTo(terrain[i].x, terrain[i].y);
@@ -985,7 +956,8 @@ function drawTerrain() {
         let pEnd = terrain[endIdx];
         let midX = (pStart.x + pEnd.x) / 2;
         let padY = pStart.y;
-        let padDepth = Math.floor((padY - 50) / 5) + (level - 1) * 100;
+        // Depth = 200m per level to hit 10,000m by Level 50
+        let padDepth = Math.floor((padY - 50) / 5) + (level - 1) * 200;
 
         let dist = Math.abs(sub.x - midX);
         let dy = Math.abs(sub.y - padY);
@@ -1027,7 +999,6 @@ function drawSub() {
     ctx.translate(sub.x, sub.y);
     ctx.rotate(sub.tilt); 
     
-    // Explicitly kill any inherited shadow/glow
     ctx.shadowBlur = 0;
     ctx.shadowColor = 'transparent';
 
@@ -1124,11 +1095,7 @@ function updateParticles(dt) {
 }
 
 function getSubPolygon() {
-    // Tweak hitbox to be slightly more forgiving at the bottom (skids)
-    // and tighter at the top to avoid phantom ceiling clips
-    const w = sub.width / 2 + 4; // reduced from +6
-    const h = sub.height / 2 + 5; 
-    const angle = sub.tilt; 
+    const w = sub.width / 2 + 4; const h = sub.height / 2 + 5; const angle = sub.tilt; 
     const cos = Math.cos(angle); const sin = Math.sin(angle);
     const corners = [{x: -w, y: -h}, {x: w, y: -h}, {x: w, y: h}, {x: -w, y: h}];
     return corners.map(p => ({ x: sub.x + (p.x * cos - p.y * sin), y: sub.y + (p.x * sin + p.y * cos) }));
@@ -1147,7 +1114,8 @@ function updateUI() {
     uiElements.style.display = 'block';
     
     let rawDepth = Math.floor((sub.y - 50) / 5);
-    let levelOffset = (level - 1) * 100;
+    // UI Depth scaling: 200m per level
+    let levelOffset = (level - 1) * 200;
     uiDepth.innerText = rawDepth + levelOffset;
     uiTargetDepth.innerText = currentNearestDepth || "--";
     uiLevel.innerText = level;
@@ -1162,7 +1130,6 @@ function updateUI() {
     // UPDATE H.SPEED DISPLAY
     let hDisplay = (Math.abs(sub.vx) * 5).toFixed(1);
     uiHSpeed.innerText = hDisplay;
-    // Color Logic for H.Speed: Limit is 5 (internal)
     let hSpeedVal = Math.abs(sub.vx * 10);
     uiHSpeed.style.color = hSpeedVal >= 5 ? C_RED : C_BLUE;
 
